@@ -1,0 +1,78 @@
+from gevent.server import StreamServer
+
+store = {}
+
+def handle_client(socket, address):
+    print("New connection from", address)
+    fileobj = socket.makefile('rwb')
+
+    while True:
+        line = fileobj.readline().decode('utf-8').strip()
+        if not line:
+            break
+
+        print("Received command:", line)
+        command, *args = line.split()
+        response = ''
+
+        if command == 'GET':
+            if len(args) != 1:
+                response = 'ERROR: GET takes only one argument\n'
+            else:
+                key = args[0]
+                response = store.get(key, 'NULL') + '\n'
+
+        elif command == 'SET':
+            if len(args) != 2:
+                response = 'ERROR: SET needs exactly two arguments\n'
+            else:
+                key, value = args
+                store[key] = value
+                response = 'OK\n'
+
+        elif command == 'DELETE':
+            if len(args) != 1:
+                response = 'ERROR: DELETE needs exactly one argument\n'
+            else:
+                key = args[0]
+                if key in store:
+                    del store[key]
+                    response = 'OK\n'
+                else:
+                    response = 'NULL\n'
+
+        elif command == 'FLUSH':
+            store.clear()
+            response = 'OK\n'
+
+        elif command == 'MGET':
+            if not args:
+                response = 'ERROR: MGET needs at least one argument\n'
+            else:
+                values = [store.get(key, 'NULL') for key in args]
+                response = ' '.join(values) + '\n'
+
+        elif command == 'MSET':
+            if len(args) % 2 != 0:
+                response = 'ERROR: MSET needs an even number of arguments\n'
+            else:
+                for i in range(0, len(args), 2):
+                    key = args[i]
+                    value = args[i + 1]
+                    store[key] = value
+                response = 'OK\n'
+
+        else:
+            response = 'ERROR: Unknown command\n'
+
+        fileobj.write(response.encode('utf-8'))
+        fileobj.flush()
+
+    print(f"Connection from {address} closed")
+    fileobj.close()
+    socket.close()
+
+if __name__ == '__main__':
+    server = StreamServer(('127.0.0.1', 12345), handle_client)
+    print("Starting server on port 12345")
+    server.serve_forever()
