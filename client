@@ -1,78 +1,96 @@
-from gevent.server import StreamServer
+import socket
 
-store = {}
+class KVClient:
+    def _init_(self, host='127.0.0.1', port=12345):
+        self.host = host
+        self.port = port
 
-def handle_client(socket, address):
-    print("New connection from", address)
-    fileobj = socket.makefile('rwb')
+    def send_command(self, command):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect((self.host, self.port))
+            s.sendall(command.encode('utf-8') + b'\n')
+            response = s.recv(1024).decode('utf-8').strip()
+        return response
+
+    def get(self, key):
+        return self.send_command(f'GET {key}')
+
+    def set(self, key, value):
+        return self.send_command(f'SET {key} {value}')
+
+    def delete(self, key):
+        return self.send_command(f'DELETE {key}')
+
+    def flush(self):
+        return self.send_command('FLUSH')
+
+    def mget(self, *keys):
+        return self.send_command(f'MGET {" ".join(keys)}')
+
+    def mset(self, *key_value_pairs):
+        return self.send_command(f'MSET {" ".join(key_value_pairs)}')
+
+def main():
+    client = KVClient()
+
+    print("Simple Key-Value Store Client")
+    print("Commands: GET key, SET key value, DELETE key, FLUSH, MGET key1 key2 ..., MSET key1 value1 key2 value2 ...")
+    print("Type 'exit' to quit")
 
     while True:
-        line = fileobj.readline().decode('utf-8').strip()
-        if not line:
+        user_input = input("Enter command: ").strip()
+        if user_input.lower() == 'exit':
+            print("Exiting...")
             break
+        if not user_input:
+            continue
 
-        print("Received command:", line)
-        command, *args = line.split()
-        response = ''
+        try:
+            command, *params = user_input.split()
+        except ValueError:
+            print("Invalid command. Please try again.")
+            continue
+
+        command = command.upper()
 
         if command == 'GET':
-            if len(args) != 1:
-                response = 'ERROR: GET takes only one argument\n'
+            if len(params) != 1:
+                print("ERROR: GET requires exactly one argument")
             else:
-                key = args[0]
-                response = store.get(key, 'NULL') + '\n'
+                print(client.get(params[0]))
 
         elif command == 'SET':
-            if len(args) != 2:
-                response = 'ERROR: SET needs exactly two arguments\n'
+            if len(params) != 2:
+                print("ERROR: SET requires exactly two arguments")
             else:
-                key, value = args
-                store[key] = value
-                response = 'OK\n'
+                print(client.set(params[0], params[1]))
 
         elif command == 'DELETE':
-            if len(args) != 1:
-                response = 'ERROR: DELETE needs exactly one argument\n'
+            if len(params) != 1:
+                print("ERROR: DELETE requires exactly one argument")
             else:
-                key = args[0]
-                if key in store:
-                    del store[key]
-                    response = 'OK\n'
-                else:
-                    response = 'NULL\n'
+                print(client.delete(params[0]))
 
         elif command == 'FLUSH':
-            store.clear()
-            response = 'OK\n'
+            if params:
+                print("ERROR: FLUSH does not take any arguments")
+            else:
+                print(client.flush())
 
         elif command == 'MGET':
-            if not args:
-                response = 'ERROR: MGET needs at least one argument\n'
+            if not params:
+                print("ERROR: MGET requires at least one argument")
             else:
-                values = [store.get(key, 'NULL') for key in args]
-                response = ' '.join(values) + '\n'
+                print(client.mget(*params))
 
         elif command == 'MSET':
-            if len(args) % 2 != 0:
-                response = 'ERROR: MSET needs an even number of arguments\n'
+            if len(params) % 2 != 0:
+                print("ERROR: MSET requires an even number of arguments")
             else:
-                for i in range(0, len(args), 2):
-                    key = args[i]
-                    value = args[i + 1]
-                    store[key] = value
-                response = 'OK\n'
+                print(client.mset(*params))
 
         else:
-            response = 'ERROR: Unknown command\n'
+            print("ERROR: Unknown command")
 
-        fileobj.write(response.encode('utf-8'))
-        fileobj.flush()
-
-    print(f"Connection from {address} closed")
-    fileobj.close()
-    socket.close()
-
-if __name__ == '__main__':
-    server = StreamServer(('127.0.0.1', 12345), handle_client)
-    print("Starting server on port 12345")
-    server.serve_forever()
+if _name_ == '_main_':
+    main()
